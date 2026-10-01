@@ -19,6 +19,10 @@
 - `--images embed` writes base64 images into Markdown and can make the file very large.
 - PDF extraction is computationally heavier than Office extraction and may download model files on first use.
 - `--pdf-pages-per-batch 0` disables page batching. Smaller positive values trade speed for lower peak memory.
+- `--formulas crop` applies to formulas Docling detected but left without LaTeX: an empty formula `text` with non-empty original glyphs. Formulas Docling did decode keep their LaTeX.
+- Ids (`eq-0001`, …) follow Markdown order and continue across page batches. A formula that Docling's serializer drops gets no placeholder and no manifest entry.
+- Crops are rendered with pypdfium2 at 216 dpi from Docling's box, padded by 4 pt. Padding that reaches into another formula's box on the same page is blanked; the formula's own box is never blanked. Where Docling's boxes overlap, a crop can still show a sliver of the next line.
+- `--fill-formulas` writes display formulas as `$$` blocks on their own lines and inline formulas as `$...$`. It strips any `$`, `$$`, `\(\)` or `\[\]` the transcription already has, leaves unfilled placeholders unchanged, and can be re-run.
 
 ## DOCX
 

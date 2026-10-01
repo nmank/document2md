@@ -26,6 +26,8 @@ document2md document.pdf --images extract
 document2md scanned.pdf --ocr force
 document2md born-digital.pdf --ocr off
 document2md long-document.pdf --pdf-pages-per-batch 5
+document2md paper.pdf --formulas crop
+document2md --fill-formulas paper.md
 document2md document.docx
 document2md deck.pptx workbook.xlsx --output converted
 document2md workbook.xlsx --values-only --force
@@ -39,6 +41,14 @@ A file that cannot be converted is reported on stderr and the batch continues; t
 `--ocr` controls the PDF OCR stage: `auto` (default) runs OCR on bitmap areas, `off` skips it entirely and is much faster on born-digital PDFs, and `force` OCRs every page, which is what scans need.
 
 PDF inputs are passed to Docling through an ASCII-named memory stream, so paths containing spaces, accents, or other Unicode characters are supported. Long PDFs are processed in ordered 10-page ranges by default to limit peak memory use. Use `--pdf-pages-per-batch 5` (or `1`) on a constrained machine, and `--pdf-pages-per-batch 0` to disable batching.
+
+### Equations
+
+Docling detects formulas but does not decode them, so by default each one becomes `<!-- formula-not-decoded -->`. With `--formulas crop`:
+- each such formula becomes a numbered placeholder (`<!-- formula eq-0007 (display, page 3) -->`);
+- `paper_formulas/` gets a 216 dpi PNG crop of each formula, labelled contact sheets of up to 8 crops, and `formulas.json` with `latex: null` for each id.
+
+Whoever reads the crops (in the skill, Claude) writes LaTeX into the manifest. `document2md --fill-formulas paper.md` then replaces each filled placeholder with `$$` display math or `$...$` inline math. It reports the ones still missing and exits `1` while any remain. This needs no additional model or GPU. Inline math that Docling leaves as flattened text inside a sentence is not covered.
 
 The script creates and reuses its own `.venv` (see [Skill](#skill)), so for local development the gitignored `.venv` already contains all runtime and test dependencies:
 

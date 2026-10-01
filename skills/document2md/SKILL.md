@@ -41,6 +41,7 @@ python <skill>/scripts/convert_document.py first.docx second.pptx book.xlsx --ou
    - `auto` (default) OCRs bitmap areas only.
    - `off` skips OCR entirely. Much faster, and correct for born-digital PDFs.
    - `force` OCRs every page. Use it for scans and for pages whose text layer is missing or wrong.
+   When the user needs the equations in a PDF, add `--formulas crop` and follow [Recovering equations](#recovering-equations).
 6. Inspect the Markdown for structural completeness. Compare the number and order of source tables, slides, and worksheets when fidelity matters.
 7. Return the Markdown and its generated assets directory when `--images extract` was selected.
 
@@ -74,6 +75,8 @@ python <skill>/scripts/convert_document.py first.docx second.pptx book.xlsx --ou
 --no-bootstrap      Do not create or re-exec into the skill's own virtual environment
 --pdf-pages-per-batch N
                     PDF pages processed at once (default: 10; 0 disables batching)
+--formulas MODE     PDF: off (default) or crop (crop undecoded formulas for LaTeX transcription)
+--fill-formulas     Patch LaTeX from <stem>_formulas/formulas.json into the given .md files
 --force             Overwrite existing outputs
 ```
 
@@ -85,5 +88,29 @@ python <skill>/scripts/convert_document.py first.docx second.pptx book.xlsx --ou
 - Do not manually rename or copy a PDF solely because its path contains spaces, accents, or other Unicode characters; the converter handles this internally.
 - Use `--ocr off` for born-digital PDFs. It removes the OCR stage, which dominates runtime, and silences `RapidOCR returned empty result!` notices that do not indicate lost text.
 - Docling reconstructs reading order and tables statistically. Heading order and table cells can be wrong on dense layouts, and signature blocks, footers, and CSV stamps are not carried over. Check the original before relying on such a passage; do not repair it silently in the Markdown.
+
+## Recovering equations
+
+Docling finds formulas but cannot decode them; without help each one becomes `<!-- formula-not-decoded -->`. With `--formulas crop`, you transcribe them yourself from images:
+
+1. Convert with `--formulas crop`. Every undecoded formula becomes a placeholder such as `<!-- formula eq-0007 (display, page 3) -->`. Beside the Markdown, `<stem>_formulas/` holds:
+   - `formulas.json`, with one entry per formula: `id`, `page`, `display`, `hint` (Docling's flattened text, only a clue) and `latex: null`;
+   - one crop per formula (`eq-0007.png`);
+   - `sheet-NN.png`: labelled contact sheets of up to 8 crops each.
+2. View each `sheet-NN.png`. Use the single `eq-NNNN.png` crops only when a sheet is unclear.
+3. For each id, set `latex` in `formulas.json` to KaTeX-compatible LaTeX for exactly what the crop shows:
+   - Transcribe; do not correct, simplify, complete or renumber.
+   - Write an equation number as `\tag{n}`.
+   - Ignore fragments of neighbouring lines cut off at a crop's top or bottom edge.
+   - A formula that continues a previous line (starting with `=`) stays as it is.
+   - Mark an unreadable part as `\text{[illegible]}`; never guess.
+   - Leave out `$` delimiters; the fill step adds them.
+4. Run `python <skill>/scripts/convert_document.py --fill-formulas path/to/output.md`. It reports how many formulas it filled. Exit code `1` means some still have no LaTeX, and those stay as placeholders. Fill them, or tell the user which remain.
+5. Compare a few filled formulas against their crops before returning the Markdown. Return the Markdown without the `_formulas` folder unless the user wants it.
+
+Batching and limits:
+- For more than about 60 formulas, work a few sheets at a time and run `--fill-formulas` after each batch. Re-running is safe; filled formulas are not touched again.
+- Only formulas Docling detects are cropped. Math written inside a sentence is usually left by Docling as flattened text (`βt1` for $\beta_1^t$), and this step does not fix it. Tell the user when that matters.
+- Docling decides the order of stacked equations, and it can swap lines. Keep the order it gives and mention any swap you notice rather than reordering silently.
 
 Read [references/format-behavior.md](references/format-behavior.md) when the user asks about fidelity, limitations, or the exact mapping for a format.

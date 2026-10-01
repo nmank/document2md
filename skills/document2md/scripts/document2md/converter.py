@@ -35,6 +35,7 @@ class ConversionOptions:
     assets_dir: Path | None = None
     pdf_pages_per_batch: int = 10
     ocr: str = "auto"
+    formulas: str = "off"
 
 
 @dataclass(slots=True)
@@ -549,6 +550,7 @@ def _convert_pdf_with_converter(
         # (already validated upstream by _pdf_page_count in normal use) just
         # means no comments get surfaced, not a conversion failure.
         annot_doc = None
+    formulas: list = []
 
     try:
         for batch_number, page_range in enumerate(ranges, start=1):
@@ -557,6 +559,10 @@ def _convert_pdf_with_converter(
                 page_range=page_range,
             )
             document = conversion.document
+            if options.formulas == "crop":
+                from . import formulas as formula_crops
+
+                formulas.extend(formula_crops.tag_formulas(document, len(formulas)))
 
             if options.images == "extract" and len(ranges) > 1:
                 assets_root = options.assets_dir or output_path.with_name(f"{output_path.stem}_assets")
@@ -603,6 +609,12 @@ def _convert_pdf_with_converter(
             annot_doc.close()
 
     markdown = "\n\n".join(part for part in markdown_parts if part).rstrip() + "\n"
+    if formulas:
+        from . import formulas as formula_crops
+
+        markdown, formula_files, formula_warnings = formula_crops.finish(path, markdown, formulas, output_path)
+        assets.extend(formula_files)
+        warnings.extend(formula_warnings)
     if all_footnotes:
         markdown = markdown.rstrip("\n") + pdf_comments.render_comments_section(all_footnotes) + "\n"
     return markdown, assets, warnings
@@ -684,6 +696,8 @@ def convert_file(input_path: str | Path, output_path: str | Path | None = None, 
         raise ValueError("pdf_pages_per_batch must be zero or a positive integer.")
     if options.ocr not in OCR_MODES:
         raise ValueError("ocr must be one of: auto, off, force.")
+    if options.formulas not in {"off", "crop"}:
+        raise ValueError("formulas must be one of: off, crop.")
 
     requested = Path(output_path).expanduser() if output_path else source.with_suffix(".md")
     target = _unique_path(requested.resolve(), options.force)

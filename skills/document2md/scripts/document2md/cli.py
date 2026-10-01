@@ -4,6 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from . import formulas as formula_crops
 from .converter import OCR_MODES, ConversionOptions, SUPPORTED_SUFFIXES, convert_files
 
 
@@ -37,6 +38,17 @@ def build_parser() -> argparse.ArgumentParser:
         choices=sorted(OCR_MODES),
         default="auto",
         help="PDF OCR: auto (bitmap areas only), off (digital text only, much faster), or force (every page).",
+    )
+    parser.add_argument(
+        "--formulas",
+        choices=sorted(formula_crops.FORMULA_MODES),
+        default="off",
+        help="PDF: crop each undecoded formula to <stem>_formulas/ with a manifest for its LaTeX (default: off).",
+    )
+    parser.add_argument(
+        "--fill-formulas",
+        action="store_true",
+        help="Treat inputs as converted .md files and patch in the LaTeX from their <stem>_formulas/formulas.json.",
     )
     parser.add_argument("--force", action="store_true", help="Overwrite existing Markdown outputs.")
     parser.add_argument(
@@ -78,6 +90,8 @@ def _input_paths(raw_inputs: list[str]) -> list[Path]:
 def main(argv: list[str] | None = None) -> int:
     _configure_text_streams()
     args = build_parser().parse_args(argv)
+    if args.fill_formulas:
+        return _fill_formulas(args.inputs)
     try:
         inputs = _input_paths(args.inputs)
         output = Path(args.output).expanduser() if args.output else None
@@ -106,6 +120,7 @@ def main(argv: list[str] | None = None) -> int:
             assets_dir=Path(args.assets_dir).expanduser().resolve() if args.assets_dir else None,
             pdf_pages_per_batch=args.pdf_pages_per_batch,
             ocr=args.ocr,
+            formulas=args.formulas,
         )
         batch = convert_files(inputs, targets, options, strict=args.strict)
         for result in batch.results:
@@ -127,6 +142,22 @@ def main(argv: list[str] | None = None) -> int:
     except (FileNotFoundError, RuntimeError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 2
+
+
+def _fill_formulas(raw_inputs: list[str]) -> int:
+    incomplete = False
+    for raw in raw_inputs:
+        path = Path(raw).expanduser()
+        try:
+            filled, missing = formula_crops.fill(path)
+        except (FileNotFoundError, ValueError) as error:
+            print(f"ERROR: {path}: {error}", file=sys.stderr)
+            return 2
+        print(f"{path}: filled {len(filled)} formulas, {len(missing)} still missing")
+        if missing:
+            incomplete = True
+            print(f"WARNING: {path}: no LaTeX yet for {', '.join(missing)}", file=sys.stderr)
+    return 1 if incomplete else 0
 
 
 if __name__ == "__main__":
