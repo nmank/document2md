@@ -19,9 +19,16 @@
 - `--images embed` writes base64 images into Markdown and can make the file very large.
 - PDF extraction is computationally heavier than Office extraction and may download model files on first use.
 - `--pdf-pages-per-batch 0` disables page batching. Smaller positive values trade speed for lower peak memory.
-- `--formulas crop` applies to formulas Docling detected but left without LaTeX: an empty formula `text` with non-empty original glyphs. Formulas Docling did decode keep their LaTeX.
-- Ids (`eq-0001`, …) follow Markdown order and continue across page batches. A formula that Docling's serializer drops gets no placeholder and no manifest entry.
-- Crops are rendered with pypdfium2 at 216 dpi from Docling's box, padded by 4 pt. Padding that reaches into another formula's box on the same page is blanked; the formula's own box is never blanked. Where Docling's boxes overlap, a crop can still show a sliver of the next line.
+- `--formulas display` applies to formulas Docling detected but left without LaTeX: an empty formula `text` with non-empty original glyphs. Formulas Docling did decode keep their LaTeX.
+- `--formulas all` also scans each Docling paragraph's characters, taken from the pypdfium2 text layer inside the paragraph's box:
+  - Math is a run of characters in math fonts (`CMMI`, `CMSY`, `CMEX`, AMS, Euler, `Symbol`, `*Math`), or set at under 85% of the body size in a non-prose font. Non-prose Computer Modern roman characters, and prose-font digits and operators, join a run but cannot start one. Prose-font letters, such as the "st" in "1st", are never math.
+  - Runs split at line breaks. Prose punctuation is trimmed from both ends. Brackets that frame the math in the prose font are dropped, as in "(mt)"; round and square brackets balance together, so `[0, 1)` stays whole.
+  - A run is aligned with Docling's paragraph text, and the whole paragraph is skipped below 85% similarity. Each span is extended over detached accents (Docling writes ` ̂mt` for $\hat m_t$), and a span is skipped if it matches below 60%.
+  - Automatic LaTeX is produced only when the span's characters equal Docling's text exactly; the text layer can miss glyphs Docling still has. It is limited to math-italic, `\mathbb` and `\mathcal` letters, Greek, a fixed operator table and single-level sub/superscripts chosen by baseline. Anything with `CMEX` glyphs (accents, radicals, big operators), upright letters or nested scripts is cropped.
+  - Identical spans, with the same glyphs, fonts, sizes and baseline offsets, share one transcription through `same_as`.
+  - Code blocks and tables are not scanned.
+- Ids (`eq-0001`, …) follow document order across display and inline math and continue across page batches; the output is the same whatever `--pdf-pages-per-batch` is. A formula that Docling's serializer drops gets no placeholder and no manifest entry.
+- Crops are rendered with pypdfium2 at 216 dpi from Docling's box, padded by 4 pt (inline formulas: their glyph boxes, padded by 1.5 pt). Padding that reaches into another formula's box on the same page is blanked; the formula's own box is never blanked. Where Docling's boxes overlap, a crop can still show a sliver of the next line.
 - `--fill-formulas` writes display formulas as `$$` blocks on their own lines and inline formulas as `$...$`. It strips any `$`, `$$`, `\(\)` or `\[\]` the transcription already has, leaves unfilled placeholders unchanged, and can be re-run.
 
 ## DOCX

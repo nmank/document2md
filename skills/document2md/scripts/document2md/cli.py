@@ -43,7 +43,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--formulas",
         choices=sorted(formula_crops.FORMULA_MODES),
         default="off",
-        help="PDF: crop each undecoded formula to <stem>_formulas/ with a manifest for its LaTeX (default: off).",
+        help="PDF: crop math Docling cannot decode to <stem>_formulas/ for LaTeX transcription: "
+        "display formulas, or all to add inline math found in the text layer (default: off).",
     )
     parser.add_argument(
         "--fill-formulas",

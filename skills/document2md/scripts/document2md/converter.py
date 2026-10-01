@@ -551,6 +551,11 @@ def _convert_pdf_with_converter(
         # means no comments get surfaced, not a conversion failure.
         annot_doc = None
     formulas: list = []
+    inline_tagger = None
+    if options.formulas == "all":
+        from .inline_math import InlineTagger
+
+        inline_tagger = InlineTagger(path.read_bytes())
 
     try:
         for batch_number, page_range in enumerate(ranges, start=1):
@@ -559,10 +564,10 @@ def _convert_pdf_with_converter(
                 page_range=page_range,
             )
             document = conversion.document
-            if options.formulas == "crop":
+            if options.formulas in {"display", "all"}:
                 from . import formulas as formula_crops
 
-                formulas.extend(formula_crops.tag_formulas(document, len(formulas)))
+                formulas.extend(formula_crops.tag_formulas(document, len(formulas), inline_tagger))
 
             if options.images == "extract" and len(ranges) > 1:
                 assets_root = options.assets_dir or output_path.with_name(f"{output_path.stem}_assets")
@@ -607,6 +612,11 @@ def _convert_pdf_with_converter(
     finally:
         if annot_doc is not None:
             annot_doc.close()
+        if inline_tagger is not None:
+            inline_tagger.close()
+            if inline_tagger.pages_without_text:
+                pages = ", ".join(str(page) for page in sorted(inline_tagger.pages_without_text))
+                warnings.append(f"No text layer on page(s) {pages}; inline math there was not detected.")
 
     markdown = "\n\n".join(part for part in markdown_parts if part).rstrip() + "\n"
     if formulas:
@@ -696,8 +706,8 @@ def convert_file(input_path: str | Path, output_path: str | Path | None = None, 
         raise ValueError("pdf_pages_per_batch must be zero or a positive integer.")
     if options.ocr not in OCR_MODES:
         raise ValueError("ocr must be one of: auto, off, force.")
-    if options.formulas not in {"off", "crop"}:
-        raise ValueError("formulas must be one of: off, crop.")
+    if options.formulas not in {"off", "display", "all"}:
+        raise ValueError("formulas must be one of: off, display, all.")
 
     requested = Path(output_path).expanduser() if output_path else source.with_suffix(".md")
     target = _unique_path(requested.resolve(), options.force)

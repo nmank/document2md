@@ -26,7 +26,7 @@ document2md document.pdf --images extract
 document2md scanned.pdf --ocr force
 document2md born-digital.pdf --ocr off
 document2md long-document.pdf --pdf-pages-per-batch 5
-document2md paper.pdf --formulas crop
+document2md paper.pdf --formulas all
 document2md --fill-formulas paper.md
 document2md document.docx
 document2md deck.pptx workbook.xlsx --output converted
@@ -44,11 +44,18 @@ PDF inputs are passed to Docling through an ASCII-named memory stream, so paths 
 
 ### Equations
 
-Docling detects formulas but does not decode them, so by default each one becomes `<!-- formula-not-decoded -->`. With `--formulas crop`:
-- each such formula becomes a numbered placeholder (`<!-- formula eq-0007 (display, page 3) -->`);
-- `paper_formulas/` gets a 216 dpi PNG crop of each formula, labelled contact sheets of up to 8 crops, and `formulas.json` with `latex: null` for each id.
+Docling detects display formulas but does not decode them, so by default each one becomes `<!-- formula-not-decoded -->`. It also flattens math inside sentences into prose (`βt1` for $\beta_1^t$).
 
-Whoever reads the crops (in the skill, Claude) writes LaTeX into the manifest. `document2md --fill-formulas paper.md` then replaces each filled placeholder with `$$` display math or `$...$` inline math. It reports the ones still missing and exits `1` while any remain. This needs no additional model or GPU. Inline math that Docling leaves as flattened text inside a sentence is not covered.
+`--formulas display` handles display formulas. Each becomes a numbered placeholder (`<!-- formula eq-0007 (display, page 3) -->`), and `paper_formulas/` gets a 216 dpi PNG crop of it, labelled contact sheets of up to 24 crops, and an entry in `formulas.json`.
+
+`--formulas all` also finds inline math in born-digital PDFs through the text layer, using characters in math fonts or set smaller than the prose:
+- Spans built only from unambiguous glyphs (letters, Greek, operators, sub/superscripts) get their LaTeX directly. This only happens when pdfium's characters and Docling's text agree exactly.
+- A span identical to an earlier one is listed as `same_as` that one.
+- Spans with accents, roots, fractions or doubtful glyphs are cropped like display formulas.
+
+On two math-dense pages of the Adam paper, 56 of 81 formulas were filled directly and the other 25 (21 distinct) fit on one contact sheet.
+
+Whoever reads the crops (in the skill, Claude) writes LaTeX into the manifest. `document2md --fill-formulas paper.md` then replaces each filled placeholder with `$$` display math or `$...$` inline math. It reports the ones still missing and exits `1` while any remain. This needs no additional model or GPU. Scanned pages have no text layer, so their inline math stays flattened.
 
 The script creates and reuses its own `.venv` (see [Skill](#skill)), so for local development the gitignored `.venv` already contains all runtime and test dependencies:
 

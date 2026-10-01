@@ -41,7 +41,7 @@ python <skill>/scripts/convert_document.py first.docx second.pptx book.xlsx --ou
    - `auto` (default) OCRs bitmap areas only.
    - `off` skips OCR entirely. Much faster, and correct for born-digital PDFs.
    - `force` OCRs every page. Use it for scans and for pages whose text layer is missing or wrong.
-   When the user needs the equations in a PDF, add `--formulas crop` and follow [Recovering equations](#recovering-equations).
+   When the user needs the equations in a PDF, add `--formulas all` (or `display` for display equations only) and follow [Recovering equations](#recovering-equations).
 6. Inspect the Markdown for structural completeness. Compare the number and order of source tables, slides, and worksheets when fidelity matters.
 7. Return the Markdown and its generated assets directory when `--images extract` was selected.
 
@@ -75,7 +75,7 @@ python <skill>/scripts/convert_document.py first.docx second.pptx book.xlsx --ou
 --no-bootstrap      Do not create or re-exec into the skill's own virtual environment
 --pdf-pages-per-batch N
                     PDF pages processed at once (default: 10; 0 disables batching)
---formulas MODE     PDF: off (default) or crop (crop undecoded formulas for LaTeX transcription)
+--formulas MODE     PDF: off (default), display (undecoded display formulas), or all (display plus inline math)
 --fill-formulas     Patch LaTeX from <stem>_formulas/formulas.json into the given .md files
 --force             Overwrite existing outputs
 ```
@@ -91,14 +91,14 @@ python <skill>/scripts/convert_document.py first.docx second.pptx book.xlsx --ou
 
 ## Recovering equations
 
-Docling finds formulas but cannot decode them; without help each one becomes `<!-- formula-not-decoded -->`. With `--formulas crop`, you transcribe them yourself from images:
+Without help, Docling leaves each display formula as `<!-- formula-not-decoded -->` and flattens math inside sentences into prose (`βt1` for $\beta_1^t$). With `--formulas`, the converter does what it can deterministically, and you transcribe the rest from images:
 
-1. Convert with `--formulas crop`. Every undecoded formula becomes a placeholder such as `<!-- formula eq-0007 (display, page 3) -->`. Beside the Markdown, `<stem>_formulas/` holds:
-   - `formulas.json`, with one entry per formula: `id`, `page`, `display`, `hint` (Docling's flattened text, only a clue) and `latex: null`;
-   - one crop per formula (`eq-0007.png`);
-   - `sheet-NN.png`: labelled contact sheets of up to 8 crops each.
+1. Convert with `--formulas all`, or `--formulas display` to leave inline math alone. Math the converter could not fill becomes a placeholder such as `<!-- formula eq-0007 (display, page 3) -->` or `<!-- formula eq-0012 (inline, page 3) -->`. Beside the Markdown, `<stem>_formulas/` holds `formulas.json`, with one entry per formula. Its `source` field says what is needed:
+   - `auto`: inline math read directly off the PDF's glyphs (`\beta_1`, `\alpha = 0.001`). Its LaTeX is already in the Markdown, so skip it.
+   - `same`: identical to the formula named in `same_as`, which is filled at the same time. Skip it.
+   - `crop`: needs you. There is a crop (`eq-0007.png`) on a labelled contact sheet (`sheet-NN.png`, up to 24 crops each); `hint` is Docling's flattened text, only a clue.
 2. View each `sheet-NN.png`. Use the single `eq-NNNN.png` crops only when a sheet is unclear.
-3. For each id, set `latex` in `formulas.json` to KaTeX-compatible LaTeX for exactly what the crop shows:
+3. For each `crop` entry, set `latex` in `formulas.json` to KaTeX-compatible LaTeX for exactly what the crop shows:
    - Transcribe; do not correct, simplify, complete or renumber.
    - Write an equation number as `\tag{n}`.
    - Ignore fragments of neighbouring lines cut off at a crop's top or bottom edge.
@@ -110,7 +110,10 @@ Docling finds formulas but cannot decode them; without help each one becomes `<!
 
 Batching and limits:
 - For more than about 60 formulas, work a few sheets at a time and run `--fill-formulas` after each batch. Re-running is safe; filled formulas are not touched again.
-- Only formulas Docling detects are cropped. Math written inside a sentence is usually left by Docling as flattened text (`βt1` for $\beta_1^t$), and this step does not fix it. Tell the user when that matters.
+- Inline math is found through the PDF's text layer: characters in math fonts (Computer Modern math, AMS, Cambria Math, Symbol) or set smaller than the prose. It works on born-digital PDFs only. On scans the converter warns that a page has no text layer, and that page's inline math stays as Docling wrote it. Tell the user.
+- Inline math that the text layer and Docling's text do not agree on is left as Docling's flattened text rather than guessed at, so some inline math can remain flattened.
+- Math inside code blocks (for example algorithm pseudo-code) is left alone, because `$...$` would show literally there.
+- If an `auto` entry you happen to see is wrong, correct it in the Markdown directly; `--fill-formulas` only fills placeholders.
 - Docling decides the order of stacked equations, and it can swap lines. Keep the order it gives and mention any swap you notice rather than reordering silently.
 
 Read [references/format-behavior.md](references/format-behavior.md) when the user asks about fidelity, limitations, or the exact mapping for a format.

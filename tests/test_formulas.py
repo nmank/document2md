@@ -95,7 +95,7 @@ def test_formulas_the_serializer_drops_are_left_out_of_the_manifest() -> None:
     document = _document([1])
     tagged = formulas.tag_formulas(document, 0)
 
-    _markdown, placed = formulas.place_placeholders("Only $$D2MEQ0001$$ survived.", tagged)
+    _markdown, placed = formulas.place_placeholders("Only $$D2MEQ00001$$ survived.", tagged)
 
     assert [f.id for f in placed] == ["eq-0001"]
 
@@ -147,17 +147,35 @@ def test_neighbouring_formulas_are_blanked_but_the_own_box_is_kept(tmp_path: Pat
     assert crop.getpixel((pad + 10, crop.height - 2)) > 200  # padding reaching into the neighbour is blank
 
 
-def test_sheets_hold_at_most_eight_crops_and_stay_readable(tmp_path: Path) -> None:
+def test_sheets_pack_small_crops_in_rows_and_stay_readable(tmp_path: Path) -> None:
     source = tmp_path / "doc.pdf"
     _write_pdf(source, 1)
-    tagged = [_formula(n, 1, (50, 20 + 30 * n, 550, 40 + 30 * n)) for n in range(1, 11)]
+    # 30 small inline-sized formulas: they share rows, and the 25th starts a new sheet.
+    tagged = [_formula(n, 1, (20 + 18 * (n % 30), 20 + 24 * n, 34 + 18 * (n % 30), 34 + 24 * n)) for n in range(1, 31)]
+    for formula in tagged:
+        formula.display = False
 
     files = formulas.crop_formulas(source, tagged, tmp_path / "out")
 
     sheets = [Image.open(path) for path in files if path.name.startswith("sheet-")]
     assert len(sheets) == 2
     assert all(max(sheet.size) <= formulas.SHEET_MAX_SIZE for sheet in sheets)
-    assert [f.sheet for f in tagged] == ["sheet-01.png"] * 8 + ["sheet-02.png"] * 2
+    assert sheets[0].height < 12 * (formulas.LABEL_HEIGHT + 42)  # rows, not one crop per row
+    assert [f.sheet for f in tagged] == ["sheet-01.png"] * 24 + ["sheet-02.png"] * 6
+
+
+def test_only_formulas_needing_a_reader_are_cropped(tmp_path: Path) -> None:
+    source = tmp_path / "doc.pdf"
+    _write_pdf(source, 1)
+    needed = _formula(1, 1, (50, 50, 300, 80))
+    automatic = _formula(2, 1, (50, 100, 300, 130))
+    automatic.source, automatic.latex = "auto", "x"
+    repeat = _formula(3, 1, (50, 150, 300, 180))
+    repeat.source, repeat.same_as = "same", "eq-0001"
+
+    files = formulas.crop_formulas(source, [needed, automatic, repeat], tmp_path / "out")
+
+    assert [path.name for path in files] == ["eq-0001.png", "sheet-01.png"]
 
 
 # --- Conversion -------------------------------------------------------------
@@ -185,7 +203,7 @@ def test_crop_mode_numbers_formulas_across_page_batches(tmp_path: Path, monkeypa
     _write_pdf(source, 3)
     calls = _install_fake_docling(monkeypatch, 3)
 
-    result = convert_file(source, tmp_path / "paper.md", ConversionOptions(formulas="crop", pdf_pages_per_batch=2))
+    result = convert_file(source, tmp_path / "paper.md", ConversionOptions(formulas="display", pdf_pages_per_batch=2))
 
     markdown = result.output_path.read_text(encoding="utf-8")
     assert calls == [(1, 2), (3, 3)]
@@ -196,10 +214,12 @@ def test_crop_mode_numbers_formulas_across_page_batches(tmp_path: Path, monkeypa
     ]
     manifest = json.loads((tmp_path / "paper_formulas" / "formulas.json").read_text(encoding="utf-8"))
     assert [entry["id"] for entry in manifest] == [f"eq-{n:04d}" for n in range(1, 7)]
-    assert all(entry["latex"] is None for entry in manifest)
+    assert all(entry["latex"] is None and entry["source"] == "crop" for entry in manifest)
+    assert [entry["kind"] for entry in manifest] == ["display", "inline"] * 3
     assert (tmp_path / "paper_formulas" / "eq-0006.png") in result.assets
     assert result.warnings == [
-        f"6 formulas need LaTeX: see {tmp_path / 'paper_formulas' / 'formulas.json'}, then run --fill-formulas."
+        f"6 formulas need LaTeX (6 placeholders including repeats; 0 filled from the text layer): "
+        f"see {tmp_path / 'paper_formulas' / 'formulas.json'}, then run --fill-formulas."
     ]
 
 
